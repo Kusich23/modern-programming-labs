@@ -5,22 +5,9 @@ namespace OnlineStore.Domain;
 /// </summary>
 public class Customer
 {
-    public Guid Id { get; }
-    public string Name { get; }
-    public string Email { get; }
-
-    public Customer(string name, string email, Guid? id = null)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentException.ThrowIfNullOrWhiteSpace(email);
-
-        if (!email.Contains('@'))
-        {
-            throw new ArgumentException("Customer email must be a valid email address.", nameof(email));
-        }
-
-        Id = id ?? Guid.NewGuid();
-        Name = name.Trim();
-        Email = email.Trim();
-    }
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string Name { get; init; }
+    public required string Email { get; init; }
+    public required Address Address { get; init; }
+    public string? PhoneNumber { get; init; }
 }
