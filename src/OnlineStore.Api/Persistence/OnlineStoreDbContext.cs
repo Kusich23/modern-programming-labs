@@ -9,6 +9,8 @@ public sealed class OnlineStoreDbContext(DbContextOptions<OnlineStoreDbContext> 
 {
     public DbSet<OrderRow> Orders => Set<OrderRow>();
     public DbSet<OrderLineRow> OrderLines => Set<OrderLineRow>();
+    public DbSet<ReturnRequestRow> ReturnRequests => Set<ReturnRequestRow>();
+    public DbSet<ReturnItemRow> ReturnItems => Set<ReturnItemRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -26,6 +28,23 @@ public sealed class OnlineStoreDbContext(DbContextOptions<OnlineStoreDbContext> 
         {
             entity.HasKey(l => l.Id);
             entity.Property(l => l.ProductName).IsRequired().HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<ReturnRequestRow>(entity =>
+        {
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Reason).IsRequired().HasMaxLength(500);
+            entity.Property(r => r.Status).IsRequired().HasMaxLength(32);
+            entity.HasMany(r => r.Items)
+                .WithOne(i => i.ReturnRequestRow)
+                .HasForeignKey(i => i.ReturnRequestRowId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ReturnItemRow>(entity =>
+        {
+            entity.HasKey(i => i.Id);
+            entity.Property(i => i.ProductName).IsRequired().HasMaxLength(200);
         });
     }
 }

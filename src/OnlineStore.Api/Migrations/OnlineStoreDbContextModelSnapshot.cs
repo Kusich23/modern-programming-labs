@@ -63,6 +63,60 @@ namespace OnlineStore.Api.Migrations
                     b.ToTable("Orders");
                 });
 
+            modelBuilder.Entity("OnlineStore.Api.Persistence.ReturnItemRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ReturnRequestRowId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReturnRequestRowId");
+
+                    b.ToTable("ReturnItems");
+                });
+
+            modelBuilder.Entity("OnlineStore.Api.Persistence.ReturnRequestRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ReturnRequests");
+                });
+
             modelBuilder.Entity("OnlineStore.Api.Persistence.OrderLineRow", b =>
                 {
                     b.HasOne("OnlineStore.Api.Persistence.OrderRow", "OrderRow")
@@ -74,9 +128,25 @@ namespace OnlineStore.Api.Migrations
                     b.Navigation("OrderRow");
                 });
 
+            modelBuilder.Entity("OnlineStore.Api.Persistence.ReturnItemRow", b =>
+                {
+                    b.HasOne("OnlineStore.Api.Persistence.ReturnRequestRow", "ReturnRequestRow")
+                        .WithMany("Items")
+                        .HasForeignKey("ReturnRequestRowId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ReturnRequestRow");
+                });
+
             modelBuilder.Entity("OnlineStore.Api.Persistence.OrderRow", b =>
                 {
                     b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("OnlineStore.Api.Persistence.ReturnRequestRow", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

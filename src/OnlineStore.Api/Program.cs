@@ -182,7 +182,184 @@ app.MapPost("/orders/{id:guid}/pay", async (
     }
 });
 
+app.MapGet("/returns", async (
+    ReturnStatus? status,
+    OnlineStoreDbContext db,
+    CancellationToken ct) =>
+{
+    IQueryable<ReturnRequestRow> query = db.ReturnRequests
+        .AsNoTracking()
+        .Include(r => r.Items);
+
+    if (status.HasValue)
+    {
+        string statusText = status.Value.ToString();
+        query = query.Where(r => r.Status == statusText);
+    }
+
+    List<ReturnRequestRow> rows = await query
+        .OrderByDescending(r => r.CreatedAt)
+        .ToListAsync(ct);
+
+    return Results.Ok(rows.Select(ReturnRequestResponse.FromRow).ToList());
+});
+
+app.MapGet("/returns/{id:guid}", async (
+    Guid id,
+    OnlineStoreDbContext db,
+    CancellationToken ct) =>
+{
+    ReturnRequestRow? row = await db.ReturnRequests
+        .AsNoTracking()
+        .Include(r => r.Items)
+        .FirstOrDefaultAsync(r => r.Id == id, ct);
+
+    return row is null
+        ? Results.NotFound(new { error = $"Return request '{id}' was not found." })
+        : Results.Ok(ReturnRequestResponse.FromRow(row));
+});
+
+app.MapPost("/returns", async (
+    CreateReturnRequest request,
+    OnlineStoreDbContext db,
+    CancellationToken ct) =>
+{
+    if (request.Items is null || request.Items.Count == 0)
+    {
+        return Results.BadRequest(new { error = "Return request must contain at least one item." });
+    }
+
+    OrderRow? orderRow = await db.Orders
+        .AsNoTracking()
+        .FirstOrDefaultAsync(o => o.Id == request.OrderId, ct);
+
+    if (orderRow is null)
+    {
+        return Results.NotFound(new { error = $"Order '{request.OrderId}' was not found." });
+    }
+
+    if (orderRow.Status != OrderStatus.Paid.ToString())
+    {
+        return Results.Conflict(new { error = $"Return request can only be created for Paid orders (current status: '{orderRow.Status}')." });
+    }
+
+    ReturnRequest domainReturn;
+    try
+    {
+        domainReturn = new ReturnRequest(request.OrderId, request.Reason);
+        foreach (CreateReturnItemRequest item in request.Items)
+        {
+            domainReturn.AddItem(item.ProductName, item.Quantity, item.UnitPrice);
+        }
+    }
+    catch (Exception ex) when (ex is ArgumentException or DomainRuleViolationException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    var row = new ReturnRequestRow
+    {
+        Id = domainReturn.Id,
+        OrderId = domainReturn.OrderId,
+        Reason = domainReturn.Reason,
+        Status = domainReturn.Status.ToString(),
+        CreatedAt = domainReturn.CreatedAt,
+        Items = domainReturn.Items.Select(i => new ReturnItemRow
+        {
+            Id = i.Id,
+            ReturnRequestRowId = domainReturn.Id,
+            ProductName = i.ProductName,
+            Quantity = i.Quantity,
+            UnitPrice = i.UnitPrice
+        }).ToList()
+    };
+
+    db.ReturnRequests.Add(row);
+    await db.SaveChangesAsync(ct);
+
+    return Results.Created($"/returns/{row.Id}", ReturnRequestResponse.FromRow(row));
+});
+
+app.MapPost("/returns/{id:guid}/approve", async (
+    Guid id,
+    OnlineStoreDbContext db,
+    CancellationToken ct) =>
+{
+    ReturnRequestRow? row = await db.ReturnRequests
+        .Include(r => r.Items)
+        .FirstOrDefaultAsync(r => r.Id == id, ct);
+
+    if (row is null)
+    {
+        return Results.NotFound(new { error = $"Return request '{id}' was not found." });
+    }
+
+    ReturnRequest domainReturn = ReconstructReturnRequest(row);
+    try
+    {
+        domainReturn.Approve();
+        row.Status = domainReturn.Status.ToString();
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(ReturnRequestResponse.FromRow(row));
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or DomainRuleViolationException)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/returns/{id:guid}/reject", async (
+    Guid id,
+    OnlineStoreDbContext db,
+    CancellationToken ct) =>
+{
+    ReturnRequestRow? row = await db.ReturnRequests
+        .Include(r => r.Items)
+        .FirstOrDefaultAsync(r => r.Id == id, ct);
+
+    if (row is null)
+    {
+        return Results.NotFound(new { error = $"Return request '{id}' was not found." });
+    }
+
+    ReturnRequest domainReturn = ReconstructReturnRequest(row);
+    try
+    {
+        domainReturn.Reject();
+        row.Status = domainReturn.Status.ToString();
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(ReturnRequestResponse.FromRow(row));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
 app.Run();
+
+static ReturnRequest ReconstructReturnRequest(ReturnRequestRow row)
+{
+    var domainReturn = new ReturnRequest(row.OrderId, row.Reason, row.Id, row.CreatedAt);
+    foreach (ReturnItemRow item in row.Items)
+    {
+        domainReturn.AddItem(item.ProductName, item.Quantity, item.UnitPrice);
+    }
+
+    if (Enum.TryParse<ReturnStatus>(row.Status, out ReturnStatus persistedStatus))
+    {
+        if (persistedStatus == ReturnStatus.Approved)
+        {
+            domainReturn.Approve();
+        }
+        else if (persistedStatus == ReturnStatus.Rejected)
+        {
+            domainReturn.Reject();
+        }
+    }
+
+    return domainReturn;
+}
 
 static OrderResponse MapToResponse(OrderRow row, InMemoryOrderStore catalog)
 {
