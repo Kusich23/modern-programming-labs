@@ -65,3 +65,8 @@
 | `POST` | `/returns` | Створити нову заявку на повернення для оплаченого замовлення | `CreateReturnRequest(Guid OrderId, string Reason, IReadOnlyList<CreateReturnItemRequest> Items)` | `ReturnRequestResponse` | `201 Created`, `400 Bad Request`, `404 Not Found`, `409 Conflict` |
 | `POST` | `/returns/{id:guid}/approve` | Схвалити заявку на повернення (лише з `Pending` за наявності позицій) | — | `ReturnRequestResponse` | `200 OK`, `404 Not Found`, `409 Conflict` |
 | `POST` | `/returns/{id:guid}/reject` | Відхилити заявку на повернення (лише зі статусу `Pending`) | `RejectReturnRequest(string? Note)` (опційно) | `ReturnRequestResponse` | `200 OK`, `404 Not Found`, `409 Conflict` |
+
+## 6. План реалізації (Git Issues)
+1. **Issue #14:** [Design return entities, persistence models and EF Core SQLite migration](https://github.com/Kusich23/modern-programming-labs/issues/14)
+2. **Issue #15:** [Implement return domain rules and Minimal API endpoints (/returns)](https://github.com/Kusich23/modern-programming-labs/issues/15)
+3. **Issue #16:** [Add xUnit tests for return workflow and configure GitHub Actions CI](https://github.com/Kusich23/modern-programming-labs/issues/16)
