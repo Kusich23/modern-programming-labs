@@ -7,6 +7,8 @@ public class Order
 {
     private readonly List<OrderItem> _items = [];
 
+    public event EventHandler<Order>? OrderPaid;
+
     public Guid Id { get; }
     public Customer Customer { get; }
     public OrderStatus Status { get; private set; }
@@ -101,6 +103,7 @@ public class Order
         paymentMethod.Pay(amountToPay);
         Status = OrderStatus.Paid;
         logger?.Invoke($"Order {Id}: paid {amountToPay:F2} UAH via {paymentMethod.Name}.");
+        OrderPaid?.Invoke(this, this);
     }
 
     /// <summary>
