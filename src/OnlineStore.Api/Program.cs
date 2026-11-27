@@ -1,10 +1,14 @@
+using Microsoft.EntityFrameworkCore;
 using OnlineStore.Api.Dtos;
+using OnlineStore.Api.Persistence;
 using OnlineStore.Api.Storage;
 using OnlineStore.Domain;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+builder.Services.AddDbContext<OnlineStoreDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 builder.Services.AddSingleton<InMemoryOrderStore>();
 builder.Services.AddSingleton<INotificationService>(_ =>
     new ConsoleNotificationService(message => Console.WriteLine($"[Notification] {message}")));
