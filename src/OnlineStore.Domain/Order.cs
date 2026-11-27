@@ -111,6 +111,39 @@ public class Order
         Status = OrderStatus.Cancelled;
     }
 
+    /// <summary>
+    /// Returns a human-readable description of the current order status.
+    /// </summary>
+    public string GetStatusDescription() => Status switch
+    {
+        OrderStatus.Created => "Order has been created and is awaiting payment.",
+        OrderStatus.Paid => "Order has been paid and is being prepared for shipment.",
+        OrderStatus.Shipped => "Order has been shipped to the delivery address.",
+        OrderStatus.Delivered => "Order has been delivered to the customer.",
+        OrderStatus.Cancelled => "Order has been cancelled.",
+        _ => "Unknown order status."
+    };
+
+    /// <summary>
+    /// Categorizes the order size based on its total amount.
+    /// </summary>
+    public string GetOrderCategory() => Total switch
+    {
+        < 500m => "Small",
+        < 5000m => "Medium",
+        _ => "Large"
+    };
+
+    /// <summary>
+    /// Determines the delivery type using property pattern matching on status and total.
+    /// </summary>
+    public string GetDeliveryType() => this switch
+    {
+        { Status: OrderStatus.Paid, Total: >= 2000m } => "Free Delivery",
+        { Status: OrderStatus.Cancelled } => "No Delivery (Cancelled)",
+        _ => "Standard Delivery"
+    };
+
     private void EnsureModifiable()
     {
         if (Status != OrderStatus.Created)
