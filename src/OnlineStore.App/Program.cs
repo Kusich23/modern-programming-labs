@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using OnlineStore.App;
 using OnlineStore.Domain;
 
@@ -10,20 +11,29 @@ Console.WriteLine("Domain: Online Store");
 Console.WriteLine(".NET: 10");
 Console.WriteLine(new string('=', 60));
 
-string reportPath = Path.Combine(AppContext.BaseDirectory, "data", "orders-report.json");
-bool writeIndented = true;
+string configFile = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+IConfiguration configuration = new ConfigurationBuilder()
+    .AddJsonFile(configFile, optional: false, reloadOnChange: false)
+    .Build();
+
+string relativePath = configuration["Storage:FilePath"] ?? Path.Combine("data", "orders-report.json");
+bool writeIndented = bool.TryParse(configuration["Storage:WriteIndented"], out bool parsedIndented)
+    ? parsedIndented
+    : true;
+
+string reportPath = Path.Combine(AppContext.BaseDirectory, relativePath);
 
 List<OrderReport> reports = CreateSampleReports();
 
 try
 {
     await OrderReportStorage.SaveAsync(reportPath, reports, writeIndented);
-    Console.WriteLine($"Exported {reports.Count} order reports to: {reportPath}");
+    Console.WriteLine($"Exported {reports.Count} order reports (WriteIndented={writeIndented}) to:\n  {reportPath}");
 
     IReadOnlyList<OrderReport> loadedReports = await OrderReportStorage.LoadAsync(reportPath);
     decimal totalAmount = loadedReports.Sum(r => r.Total);
 
-    Console.WriteLine($"Imported reports count: {loadedReports.Count}");
+    Console.WriteLine($"\nImported reports count: {loadedReports.Count}");
     Console.WriteLine($"Imported reports total amount: {totalAmount:F2} UAH");
     Console.WriteLine("\nLoaded report entries:");
     foreach (OrderReport report in loadedReports)
