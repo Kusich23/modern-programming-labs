@@ -60,3 +60,28 @@ catch (JsonException ex)
 {
     Console.WriteLine($"JSON deserialization failed: {ex.Message}");
 }
+
+// Demonstrate cancellation and HTTP error handling without crashing
+Console.WriteLine("\nTesting cancellation and HTTP error handling:");
+
+using var cancelledCts = new CancellationTokenSource();
+cancelledCts.Cancel();
+try
+{
+    await directoryClient.GetUserAsync(1, cancelledCts.Token);
+}
+catch (OperationCanceledException ex)
+{
+    Console.WriteLine($"  Caught OperationCanceledException: {ex.Message}");
+}
+
+using var invalidClient = new HttpClient { BaseAddress = new Uri("https://nonexistent.invalid/") };
+var invalidDirectoryClient = new ExternalCustomerDirectoryClient(invalidClient);
+try
+{
+    await invalidDirectoryClient.GetUserAsync(1, cts.Token);
+}
+catch (HttpRequestException ex)
+{
+    Console.WriteLine($"  Caught HttpRequestException: {ex.Message}");
+}
