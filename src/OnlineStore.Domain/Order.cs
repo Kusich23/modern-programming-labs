@@ -7,6 +7,8 @@ public class Order
 {
     private readonly List<OrderItem> _items = [];
 
+    public event EventHandler<Order>? OrderPaid;
+
     public Guid Id { get; }
     public Customer Customer { get; }
     public OrderStatus Status { get; private set; }
@@ -25,7 +27,7 @@ public class Order
     /// <summary>
     /// Adds a product with the specified quantity to the order while it is in Created status.
     /// </summary>
-    public void AddItem(Product product, int quantity)
+    public void AddItem(Product product, int quantity, Action<string>? logger = null)
     {
         EnsureModifiable();
         ArgumentNullException.ThrowIfNull(product);
@@ -35,16 +37,18 @@ public class Order
         if (existingItem is not null)
         {
             existingItem.IncreaseQuantity(quantity);
+            logger?.Invoke($"Order {Id}: increased '{product.Name}' quantity by {quantity} (new total: {Total:F2} UAH).");
             return;
         }
 
         _items.Add(new OrderItem(product, quantity));
+        logger?.Invoke($"Order {Id}: added {quantity}x '{product.Name}' (new total: {Total:F2} UAH).");
     }
 
     /// <summary>
     /// Removes a product line item from the order while it is in Created status.
     /// </summary>
-    public bool RemoveItem(Guid productId)
+    public bool RemoveItem(Guid productId, Action<string>? logger = null)
     {
         EnsureModifiable();
 
@@ -54,13 +58,22 @@ public class Order
             return false;
         }
 
-        return _items.Remove(item);
+        bool removed = _items.Remove(item);
+        if (removed)
+        {
+            logger?.Invoke($"Order {Id}: removed '{item.Product.Name}' (new total: {Total:F2} UAH).");
+        }
+
+        return removed;
     }
 
     /// <summary>
-    /// Pays for the order using the provided payment method and transitions status to Paid.
+    /// Pays for the order using the provided payment method and optional discount policy, then transitions status to Paid.
     /// </summary>
-    public void Pay(IPaymentMethod paymentMethod)
+    public void Pay(
+        IPaymentMethod paymentMethod,
+        Action<string>? logger = null,
+        Func<decimal, decimal>? discountPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(paymentMethod);
 
@@ -84,14 +97,19 @@ public class Order
             throw new InvalidOperationException("Cannot pay for an empty order.");
         }
 
-        paymentMethod.Pay(Total);
+        decimal amountToPay = discountPolicy is not null ? discountPolicy(Total) : Total;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(amountToPay);
+
+        paymentMethod.Pay(amountToPay);
         Status = OrderStatus.Paid;
+        logger?.Invoke($"Order {Id}: paid {amountToPay:F2} UAH via {paymentMethod.Name}.");
+        OrderPaid?.Invoke(this, this);
     }
 
     /// <summary>
     /// Cancels the order if it has not been paid or already cancelled.
     /// </summary>
-    public void Cancel()
+    public void Cancel(Action<string>? logger = null)
     {
         if (Status == OrderStatus.Paid)
         {
@@ -109,6 +127,7 @@ public class Order
         }
 
         Status = OrderStatus.Cancelled;
+        logger?.Invoke($"Order {Id}: order cancelled.");
     }
 
     /// <summary>
