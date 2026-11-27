@@ -5,6 +5,8 @@ namespace OnlineStore.Domain;
 /// </summary>
 public class Order
 {
+    public const int MaxQuantityPerProduct = 100;
+
     private readonly List<OrderItem> _items = [];
 
     public event EventHandler<Order>? OrderPaid;
@@ -29,11 +31,19 @@ public class Order
     /// </summary>
     public void AddItem(Product product, int quantity, Action<string>? logger = null)
     {
-        EnsureModifiable();
         ArgumentNullException.ThrowIfNull(product);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(quantity);
+        EnsureModifiable();
 
         OrderItem? existingItem = _items.FirstOrDefault(item => item.Product.Id == product.Id);
+        int resultingQuantity = (existingItem?.Quantity ?? 0) + quantity;
+        if (resultingQuantity > MaxQuantityPerProduct)
+        {
+            throw new DomainRuleViolationException(
+                "MAX_ITEM_QUANTITY",
+                $"Cannot add {quantity}x '{product.Name}': total quantity ({resultingQuantity}) exceeds limit of {MaxQuantityPerProduct}.");
+        }
+
         if (existingItem is not null)
         {
             existingItem.IncreaseQuantity(quantity);
@@ -50,6 +60,11 @@ public class Order
     /// </summary>
     public bool RemoveItem(Guid productId, Action<string>? logger = null)
     {
+        if (productId == Guid.Empty)
+        {
+            throw new ArgumentException("Product ID cannot be empty.", nameof(productId));
+        }
+
         EnsureModifiable();
 
         OrderItem? item = _items.FirstOrDefault(i => i.Product.Id == productId);
@@ -107,13 +122,13 @@ public class Order
     }
 
     /// <summary>
-    /// Cancels the order if it has not been paid or already cancelled.
+    /// Cancels the order if it has not been paid, shipped, delivered, or already cancelled.
     /// </summary>
     public void Cancel(Action<string>? logger = null)
     {
-        if (Status == OrderStatus.Paid)
+        if (Status is OrderStatus.Paid or OrderStatus.Shipped or OrderStatus.Delivered)
         {
-            throw new InvalidOperationException("Cannot cancel an order that has already been paid.");
+            throw new InvalidOperationException($"Cannot cancel an order in '{Status}' status.");
         }
 
         if (Status == OrderStatus.Cancelled)
@@ -121,13 +136,36 @@ public class Order
             throw new InvalidOperationException("Order is already cancelled.");
         }
 
-        if (Status != OrderStatus.Created)
-        {
-            throw new InvalidOperationException($"Cannot cancel an order in '{Status}' status.");
-        }
-
         Status = OrderStatus.Cancelled;
         logger?.Invoke($"Order {Id}: order cancelled.");
+    }
+
+    /// <summary>
+    /// Transitions a paid order to Shipped status.
+    /// </summary>
+    public void Ship(Action<string>? logger = null)
+    {
+        if (Status != OrderStatus.Paid)
+        {
+            throw new InvalidOperationException($"Cannot ship an order in '{Status}' status. Order must be Paid.");
+        }
+
+        Status = OrderStatus.Shipped;
+        logger?.Invoke($"Order {Id}: order shipped.");
+    }
+
+    /// <summary>
+    /// Transitions a shipped order to Delivered status.
+    /// </summary>
+    public void Deliver(Action<string>? logger = null)
+    {
+        if (Status != OrderStatus.Shipped)
+        {
+            throw new InvalidOperationException($"Cannot deliver an order in '{Status}' status. Order must be Shipped.");
+        }
+
+        Status = OrderStatus.Delivered;
+        logger?.Invoke($"Order {Id}: order delivered.");
     }
 
     /// <summary>
