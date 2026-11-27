@@ -5,6 +5,8 @@ namespace OnlineStore.Domain;
 /// </summary>
 public class Order
 {
+    public const int MaxQuantityPerProduct = 100;
+
     private readonly List<OrderItem> _items = [];
 
     public event EventHandler<Order>? OrderPaid;
@@ -29,11 +31,19 @@ public class Order
     /// </summary>
     public void AddItem(Product product, int quantity, Action<string>? logger = null)
     {
-        EnsureModifiable();
         ArgumentNullException.ThrowIfNull(product);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(quantity);
+        EnsureModifiable();
 
         OrderItem? existingItem = _items.FirstOrDefault(item => item.Product.Id == product.Id);
+        int resultingQuantity = (existingItem?.Quantity ?? 0) + quantity;
+        if (resultingQuantity > MaxQuantityPerProduct)
+        {
+            throw new DomainRuleViolationException(
+                "MAX_ITEM_QUANTITY",
+                $"Cannot add {quantity}x '{product.Name}': total quantity ({resultingQuantity}) exceeds limit of {MaxQuantityPerProduct}.");
+        }
+
         if (existingItem is not null)
         {
             existingItem.IncreaseQuantity(quantity);
@@ -50,6 +60,11 @@ public class Order
     /// </summary>
     public bool RemoveItem(Guid productId, Action<string>? logger = null)
     {
+        if (productId == Guid.Empty)
+        {
+            throw new ArgumentException("Product ID cannot be empty.", nameof(productId));
+        }
+
         EnsureModifiable();
 
         OrderItem? item = _items.FirstOrDefault(i => i.Product.Id == productId);
