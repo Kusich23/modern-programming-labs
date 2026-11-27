@@ -67,3 +67,69 @@ Accept: application/json
 ### Pay missing order (404 Not Found)
 POST {{OnlineStore_Api_HostAddress}}/orders/99999999-9999-9999-9999-999999999999/pay
 Accept: application/json
+
+### ================= RETURNS MODULE =================
+
+### Get all return requests
+GET {{OnlineStore_Api_HostAddress}}/returns
+Accept: application/json
+
+### Get return request by Id (replace with created id, 200 OK or 404 Not Found)
+GET {{OnlineStore_Api_HostAddress}}/returns/99999999-9999-9999-9999-999999999999
+Accept: application/json
+
+### Create return request for a Paid order (201 Created)
+POST {{OnlineStore_Api_HostAddress}}/returns
+Content-Type: application/json
+
+{
+  "orderId": "33333333-3333-3333-3333-333333333332",
+  "reason": "Defective scroll wheel",
+  "items": [
+    {
+      "productName": "Wireless Mouse",
+      "quantity": 1,
+      "unitPrice": 1200
+    }
+  ]
+}
+
+### Create invalid return request with quantity <= 0 (400 Bad Request)
+POST {{OnlineStore_Api_HostAddress}}/returns
+Content-Type: application/json
+
+{
+  "orderId": "33333333-3333-3333-3333-333333333332",
+  "reason": "Wrong item",
+  "items": [
+    {
+      "productName": "Wireless Mouse",
+      "quantity": 0,
+      "unitPrice": 1200
+    }
+  ]
+}
+
+### Create return request for missing order (404 Not Found)
+POST {{OnlineStore_Api_HostAddress}}/returns
+Content-Type: application/json
+
+{
+  "orderId": "99999999-9999-9999-9999-999999999999",
+  "reason": "Missing order",
+  "items": [
+    {
+      "productName": "Wireless Mouse",
+      "quantity": 1,
+      "unitPrice": 1200
+    }
+  ]
+}
+
+### Approve return request (200 OK, or 409 Conflict if already Approved/Rejected)
+POST {{OnlineStore_Api_HostAddress}}/returns/99999999-9999-9999-9999-999999999999/approve
+Accept: application/json
+
+### Reject return request (200 OK, or 409 Conflict if already Approved/Rejected)
+POST {{OnlineStore_Api_HostAddress}}/returns/99999999-9999-9999-9999-999999999999/reject
+Accept: application/json
