@@ -1,6 +1,6 @@
-﻿using System.Text.Json;
+﻿using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
-using OnlineStore.App;
 using OnlineStore.Domain;
 
 Console.WriteLine("Modern Programming Course");
@@ -16,78 +16,47 @@ IConfiguration configuration = new ConfigurationBuilder()
     .AddJsonFile(configFile, optional: false, reloadOnChange: false)
     .Build();
 
-string relativePath = configuration["Storage:FilePath"] ?? Path.Combine("data", "orders-report.json");
-bool writeIndented = bool.TryParse(configuration["Storage:WriteIndented"], out bool parsedIndented)
-    ? parsedIndented
-    : true;
+string baseUrl = configuration["ExternalApi:BaseUrl"] ?? "https://jsonplaceholder.typicode.com/";
+int[] contactIds = [1, 2, 3];
 
-string reportPath = Path.Combine(AppContext.BaseDirectory, relativePath);
+using var httpClient = new HttpClient
+{
+    BaseAddress = new Uri(baseUrl)
+};
+var directoryClient = new ExternalCustomerDirectoryClient(httpClient);
 
-List<OrderReport> reports = CreateSampleReports();
+using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
+Console.WriteLine("Loading external contacts...");
 try
 {
-    await OrderReportStorage.SaveAsync(reportPath, reports, writeIndented);
-    Console.WriteLine($"Exported {reports.Count} order reports (WriteIndented={writeIndented}) to:\n  {reportPath}");
+    var concurrentSw = Stopwatch.StartNew();
+    IReadOnlyList<ExternalUser> concurrentUsers = await directoryClient.GetUsersConcurrentlyAsync(contactIds, cts.Token);
+    concurrentSw.Stop();
 
-    IReadOnlyList<OrderReport> loadedReports = await OrderReportStorage.LoadAsync(reportPath);
-    decimal totalAmount = loadedReports.Sum(r => r.Total);
+    var sequentialSw = Stopwatch.StartNew();
+    IReadOnlyList<ExternalUser> sequentialUsers = await directoryClient.GetUsersSequentiallyAsync(contactIds, cts.Token);
+    sequentialSw.Stop();
 
-    Console.WriteLine($"\nImported reports count: {loadedReports.Count}");
-    Console.WriteLine($"Imported reports total amount: {totalAmount:F2} UAH");
-    Console.WriteLine("\nLoaded report entries:");
-    foreach (OrderReport report in loadedReports)
+    Console.WriteLine($"Контакти покупців (Received: {concurrentUsers.Count}):");
+    foreach (ExternalUser user in concurrentUsers)
     {
-        Console.WriteLine($"  - {report.OrderId} | {report.CustomerName} | {report.Status} | {report.ItemsCount} items | {report.Total:F2} UAH");
+        Console.WriteLine($"  {user.Id} | {user.Name} | {user.Email}");
     }
+
+    Console.WriteLine($"\nTiming comparison:");
+    Console.WriteLine($"  Concurrent (Task.WhenAll): {concurrentSw.ElapsedMilliseconds} ms");
+    Console.WriteLine($"  Sequential (await loop):   {sequentialSw.ElapsedMilliseconds} ms ({sequentialUsers.Count} loaded)");
 }
-catch (FileNotFoundException ex)
+catch (OperationCanceledException ex)
 {
-    Console.WriteLine($"File not found: {ex.Message}");
+    Console.WriteLine($"Request timed out or cancelled: {ex.Message}");
+}
+catch (HttpRequestException ex)
+{
+    Console.WriteLine($"HTTP request failed: {ex.Message}");
 }
 catch (JsonException ex)
 {
-    Console.WriteLine($"Invalid JSON format: {ex.Message}");
-}
-catch (IOException ex)
-{
-    Console.WriteLine($"I/O error: {ex.Message}");
-}
-
-// Demonstrate error handling for missing file and invalid JSON
-Console.WriteLine("\nTesting file and JSON error handling:");
-string missingPath = Path.Combine(AppContext.BaseDirectory, "data", "missing-report.json");
-try
-{
-    await OrderReportStorage.LoadAsync(missingPath);
-}
-catch (FileNotFoundException ex)
-{
-    Console.WriteLine($"  Caught FileNotFoundException: {ex.Message}");
-}
-
-string corruptPath = Path.Combine(AppContext.BaseDirectory, "data", "corrupt-report.json");
-try
-{
-    Directory.CreateDirectory(Path.GetDirectoryName(corruptPath)!);
-    await File.WriteAllTextAsync(corruptPath, "{ invalid json");
-    await OrderReportStorage.LoadAsync(corruptPath);
-}
-catch (JsonException ex)
-{
-    Console.WriteLine($"  Caught JsonException: {ex.Message}");
-}
-catch (IOException ex)
-{
-    Console.WriteLine($"  Caught IOException: {ex.Message}");
-}
-
-static List<OrderReport> CreateSampleReports()
-{
-    SeededStoreData seeded = StoreDataSeeder.CreateSampleData();
-    return seeded.Orders
-        .GetAll()
-        .Take(6)
-        .Select(OrderReport.FromOrder)
-        .ToList();
+    Console.WriteLine($"JSON deserialization failed: {ex.Message}");
 }
