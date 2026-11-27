@@ -1,6 +1,5 @@
-﻿using System.Diagnostics;
-using System.Text.Json;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using OnlineStore.Domain;
 
 Console.WriteLine("Modern Programming Course");
@@ -11,77 +10,66 @@ Console.WriteLine("Domain: Online Store");
 Console.WriteLine(".NET: 10");
 Console.WriteLine(new string('=', 60));
 
-string configFile = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-IConfiguration configuration = new ConfigurationBuilder()
-    .AddJsonFile(configFile, optional: false, reloadOnChange: false)
-    .Build();
+HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+builder.Services.AddSingleton<INotificationService>(_ =>
+    new ConsoleNotificationService(message => Console.WriteLine($"[ConsoleNotification] {message}")));
+builder.Services.AddTransient<OrderApplicationService>();
 
-string baseUrl = configuration["ExternalApi:BaseUrl"] ?? "https://jsonplaceholder.typicode.com/";
-int[] contactIds = [1, 2, 3];
+using IHost host = builder.Build();
 
-using var httpClient = new HttpClient
+var orderService = host.Services.GetRequiredService<OrderApplicationService>();
+
+var customer = new Customer
 {
-    BaseAddress = new Uri(baseUrl)
+    Name = "Кущов Максим Андрійович",
+    Email = "maksym.kushchov@example.com",
+    Address = new Address("Kyiv", "Khreshchatyk St", "22", "01001"),
+    PhoneNumber = "+380501234567"
 };
-var directoryClient = new ExternalCustomerDirectoryClient(httpClient);
 
-using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+var laptop = new Product("Laptop Pro 15", 35000m);
+var mouse = new Product("Wireless Mouse", 1200m);
 
-Console.WriteLine("Loading external contacts...");
+// 1. Successful payment via DI-configured OrderApplicationService + ConsoleNotificationService
+Console.WriteLine("Scenario 1: Successful payment with ConsoleNotificationService");
+var order1 = new Order(customer);
+order1.AddItem(laptop, 1);
+order1.AddItem(mouse, 1);
+orderService.ProcessPayment(order1, new CardPayment("4242"));
+
+// 2. Cancelled order payment attempt (LogWarning + InvalidOperationException)
+Console.WriteLine("\nScenario 2: Payment attempt on cancelled order");
+var cancelledOrder = new Order(customer);
+cancelledOrder.AddItem(mouse, 1);
+cancelledOrder.Cancel();
+
 try
 {
-    var concurrentSw = Stopwatch.StartNew();
-    IReadOnlyList<ExternalUser> concurrentUsers = await directoryClient.GetUsersConcurrentlyAsync(contactIds, cts.Token);
-    concurrentSw.Stop();
-
-    var sequentialSw = Stopwatch.StartNew();
-    IReadOnlyList<ExternalUser> sequentialUsers = await directoryClient.GetUsersSequentiallyAsync(contactIds, cts.Token);
-    sequentialSw.Stop();
-
-    Console.WriteLine($"Контакти покупців (Received: {concurrentUsers.Count}):");
-    foreach (ExternalUser user in concurrentUsers)
-    {
-        Console.WriteLine($"  {user.Id} | {user.Name} | {user.Email}");
-    }
-
-    Console.WriteLine($"\nTiming comparison:");
-    Console.WriteLine($"  Concurrent (Task.WhenAll): {concurrentSw.ElapsedMilliseconds} ms");
-    Console.WriteLine($"  Sequential (await loop):   {sequentialSw.ElapsedMilliseconds} ms ({sequentialUsers.Count} loaded)");
+    orderService.ProcessPayment(cancelledOrder, new BankTransferPayment());
 }
-catch (OperationCanceledException ex)
+catch (InvalidOperationException ex)
 {
-    Console.WriteLine($"Request timed out or cancelled: {ex.Message}");
-}
-catch (HttpRequestException ex)
-{
-    Console.WriteLine($"HTTP request failed: {ex.Message}");
-}
-catch (JsonException ex)
-{
-    Console.WriteLine($"JSON deserialization failed: {ex.Message}");
+    Console.WriteLine($"Caught expected InvalidOperationException: {ex.Message}");
 }
 
-// Demonstrate cancellation and HTTP error handling without crashing
-Console.WriteLine("\nTesting cancellation and HTTP error handling:");
+// 3. Swap INotificationService to InMemoryNotificationService without changing OrderApplicationService
+Console.WriteLine("\nScenario 3: Swapping INotificationService to InMemoryNotificationService (OCP & DIP)");
+HostApplicationBuilder inMemoryBuilder = Host.CreateApplicationBuilder(args);
+inMemoryBuilder.Services.AddSingleton<InMemoryNotificationService>();
+inMemoryBuilder.Services.AddSingleton<INotificationService>(sp =>
+    sp.GetRequiredService<InMemoryNotificationService>());
+inMemoryBuilder.Services.AddTransient<OrderApplicationService>();
 
-using var cancelledCts = new CancellationTokenSource();
-cancelledCts.Cancel();
-try
-{
-    await directoryClient.GetUserAsync(1, cancelledCts.Token);
-}
-catch (OperationCanceledException ex)
-{
-    Console.WriteLine($"  Caught OperationCanceledException: {ex.Message}");
-}
+using IHost inMemoryHost = inMemoryBuilder.Build();
+var inMemoryOrderService = inMemoryHost.Services.GetRequiredService<OrderApplicationService>();
+var inMemoryNotifications = inMemoryHost.Services.GetRequiredService<InMemoryNotificationService>();
 
-using var invalidClient = new HttpClient { BaseAddress = new Uri("https://nonexistent.invalid/") };
-var invalidDirectoryClient = new ExternalCustomerDirectoryClient(invalidClient);
-try
+var order2 = new Order(customer);
+order2.AddItem(mouse, 2);
+inMemoryOrderService.ProcessPayment(order2, new BankTransferPayment());
+
+Console.WriteLine($"InMemoryNotificationService captured {inMemoryNotifications.Messages.Count} message(s):");
+foreach (string msg in inMemoryNotifications.Messages)
 {
-    await invalidDirectoryClient.GetUserAsync(1, cts.Token);
-}
-catch (HttpRequestException ex)
-{
-    Console.WriteLine($"  Caught HttpRequestException: {ex.Message}");
+    Console.WriteLine($"  - {msg}");
 }
