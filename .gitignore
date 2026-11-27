@@ -9,3 +9,4 @@ obj/
 *.db-wal
 _docs/
 AGENTS.md
+data/
