@@ -1,4 +1,5 @@
-﻿using OnlineStore.Domain;
+﻿using OnlineStore.App;
+using OnlineStore.Domain;
 
 Console.WriteLine("Modern Programming Course");
 Console.WriteLine("Student: Кущов Максим Андрійович");
@@ -6,70 +7,106 @@ Console.WriteLine("Group: д4тк");
 Console.WriteLine("Variant: 1");
 Console.WriteLine("Domain: Online Store");
 Console.WriteLine(".NET: 10");
-Console.WriteLine(new string('-', 50));
+Console.WriteLine(new string('=', 60));
 
-var kyivAddress = new Address("Kyiv", "Khreshchatyk St", "22", "01001");
-var lvivAddress = new Address("Lviv", "Svobody Ave", "15", "79000");
+SeededStoreData data = StoreDataSeeder.CreateSampleData();
+IReadOnlyCollection<Order> orders = data.Orders.GetAll();
+IReadOnlyCollection<Customer> customers = data.Customers.GetAll();
 
-var customerWithPhone = new Customer
+Console.WriteLine($"Seeded: {data.Products.GetAll().Count} products, {customers.Count} customers, {orders.Count} orders.");
+Console.WriteLine(new string('=', 60));
+
+// 1. All orders with Total > 1000
+var ordersOver1000 = orders
+    .Where(o => o.Total > 1000m)
+    .ToList();
+Console.WriteLine($"1. Orders with Total > 1000 ({ordersOver1000.Count}):");
+foreach (Order order in ordersOver1000)
 {
-    Name = "Кущов Максим Андрійович",
-    Email = "maksym.kushchov@example.com",
-    Address = kyivAddress,
-    PhoneNumber = "+380501234567"
-};
+    Console.WriteLine($"   - {order.Id}: {order.Customer.Name} | {order.Total:F2} UAH | {order.Status}");
+}
 
-var customerWithoutPhone = new Customer
+// 2. Top-5 most expensive orders
+var top5Orders = orders
+    .OrderByDescending(o => o.Total)
+    .Take(5)
+    .ToList();
+Console.WriteLine("\n2. Top-5 most expensive orders:");
+foreach (Order order in top5Orders)
 {
-    Name = "Олена Коваленко",
-    Email = "olena.kovalenko@example.com",
-    Address = lvivAddress,
-    PhoneNumber = null
-};
+    Console.WriteLine($"   - {order.Total:F2} UAH ({order.Customer.Name}, {order.Status})");
+}
 
-Console.WriteLine($"Customer 1: {customerWithPhone.Name}, Phone: {customerWithPhone.PhoneNumber ?? "Not provided"}, City: {customerWithPhone.Address.City}");
-Console.WriteLine($"Customer 2: {customerWithoutPhone.Name}, Phone: {customerWithoutPhone.PhoneNumber ?? "Not provided"}, City: {customerWithoutPhone.Address.City}");
-Console.WriteLine(new string('-', 50));
+// 3. Total sales amount (Sum)
+decimal totalSales = orders.Sum(o => o.Total);
+Console.WriteLine($"\n3. Total sales amount (all orders): {totalSales:F2} UAH");
 
-var usbCable = new Product("USB-C Cable", 350m);
-var mouse = new Product("Wireless Mouse", 1200m);
-var keyboard = new Product("Mechanical Keyboard", 2500m);
-var laptop = new Product("Laptop", 35000m);
+// 4. Average order value (Average)
+decimal averageOrderValue = orders.Average(o => o.Total);
+Console.WriteLine($"\n4. Average order value: {averageOrderValue:F2} UAH");
 
-IPaymentMethod cardPayment = new CardPayment("4242");
-IPaymentMethod bankTransfer = new BankTransferPayment("UA213223130000026007233566001");
-
-// 1. Small order (< 500 UAH)
-var smallOrder = new Order(customerWithoutPhone);
-smallOrder.AddItem(usbCable, 1);
-PrintOrderSummary("Small Order (Created)", smallOrder);
-
-// 2. Medium order (< 5000 UAH, Paid, >= 2000 UAH -> Free Delivery)
-var mediumFreeOrder = new Order(customerWithPhone);
-mediumFreeOrder.AddItem(keyboard, 1);
-mediumFreeOrder.Pay(cardPayment);
-PrintOrderSummary("Medium Order (Paid >= 2000)", mediumFreeOrder);
-
-// 3. Medium order (Paid < 2000 UAH -> Standard Delivery)
-var mediumStandardOrder = new Order(customerWithoutPhone);
-mediumStandardOrder.AddItem(mouse, 1);
-mediumStandardOrder.Pay(bankTransfer);
-PrintOrderSummary("Medium Order (Paid < 2000)", mediumStandardOrder);
-
-// 4. Large order (>= 5000 UAH, Paid -> Free Delivery)
-var largeOrder = new Order(customerWithPhone);
-largeOrder.AddItem(laptop, 1);
-largeOrder.Pay(cardPayment);
-PrintOrderSummary("Large Order (Paid)", largeOrder);
-
-// 5. Cancelled order
-var cancelledOrder = new Order(customerWithoutPhone);
-cancelledOrder.AddItem(mouse, 1);
-cancelledOrder.Cancel();
-PrintOrderSummary("Cancelled Order", cancelledOrder);
-
-static void PrintOrderSummary(string label, Order order)
+// 5. Orders count per customer via GroupBy
+var ordersPerCustomer = orders
+    .GroupBy(o => o.Customer)
+    .Select(g => new { CustomerName = g.Key.Name, Count = g.Count() })
+    .OrderByDescending(x => x.Count)
+    .ToList();
+Console.WriteLine("\n5. Orders count per customer:");
+foreach (var entry in ordersPerCustomer)
 {
-    Console.WriteLine($"[{label}] Total: {order.Total:F2} UAH | Category: {order.GetOrderCategory()} | Delivery: {order.GetDeliveryType()}");
-    Console.WriteLine($"  Status ({order.Status}): {order.GetStatusDescription()}");
+    Console.WriteLine($"   - {entry.CustomerName}: {entry.Count} orders");
+}
+
+// 6. All products from all orders via SelectMany
+var orderedProducts = orders
+    .SelectMany(o => o.Items)
+    .Select(i => i.Product)
+    .DistinctBy(p => p.Id)
+    .ToList();
+Console.WriteLine($"\n6. Distinct products across all orders ({orderedProducts.Count}):");
+foreach (Product product in orderedProducts)
+{
+    Console.WriteLine($"   - {product.Name} ({product.Price:F2} UAH)");
+}
+
+// 7. Top-3 products by sold quantity
+var top3ProductsByQty = orders
+    .SelectMany(o => o.Items)
+    .GroupBy(i => i.Product)
+    .Select(g => new { ProductName = g.Key.Name, TotalQuantity = g.Sum(i => i.Quantity) })
+    .OrderByDescending(x => x.TotalQuantity)
+    .Take(3)
+    .ToList();
+Console.WriteLine("\n7. Top-3 products by sold quantity:");
+foreach (var item in top3ProductsByQty)
+{
+    Console.WriteLine($"   - {item.ProductName}: {item.TotalQuantity} pcs");
+}
+
+// 8. Customers who spent more than 5000
+var highSpendingCustomers = orders
+    .GroupBy(o => o.Customer)
+    .Select(g => new { Customer = g.Key, TotalSpent = g.Sum(o => o.Total) })
+    .Where(x => x.TotalSpent > 5000m)
+    .OrderByDescending(x => x.TotalSpent)
+    .ToList();
+Console.WriteLine("\n8. Customers who spent > 5000 UAH:");
+foreach (var entry in highSpendingCustomers)
+{
+    Console.WriteLine($"   - {entry.Customer.Name}: {entry.TotalSpent:F2} UAH");
+}
+
+// 9. Check via Any if there is an order > 10000
+bool hasOrderOver10000 = orders.Any(o => o.Total > 10000m);
+Console.WriteLine($"\n9. Any order with Total > 10000: {hasOrderOver10000}");
+
+// 10. Dictionary<Guid, decimal> with total spending per customer (key = Customer.Id)
+Dictionary<Guid, decimal> spendingByCustomerId = orders
+    .GroupBy(o => o.Customer.Id)
+    .ToDictionary(g => g.Key, g => g.Sum(o => o.Total));
+Console.WriteLine("\n10. Total spending dictionary (CustomerId -> TotalSpent):");
+foreach ((Guid customerId, decimal spent) in spendingByCustomerId)
+{
+    string name = customers.First(c => c.Id == customerId).Name;
+    Console.WriteLine($"   - {customerId} ({name}): {spent:F2} UAH");
 }
