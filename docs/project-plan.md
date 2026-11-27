@@ -18,3 +18,50 @@
 3. **Коректна кількість товару:** Кількість товару для повернення в кожній позиції `ReturnItem` має бути додатною (`Quantity > 0`, інакше `ArgumentOutOfRangeException` / `400 Bad Request`).
 4. **Перевірка вихідного замовлення:** Заявку на повернення можна створити лише для існуючого замовлення (`404` / `400`), яке перебуває у статусі `Paid` (оплачене замовлення).
 5. **Обов'язкова причина повернення:** При створенні заявки `Reason` не може бути порожнім рядком (`ArgumentException`).
+
+## 4. Модель даних та схема зв'язків
+
+### ER / UML схема (текстова)
+```text
++--------------------+          1       N   +----------------------+
+|     OrderRow       |----------------------|     ReturnRequest    |
+| (існуюче замовл.)  |                      |----------------------|
++--------------------+                      | Id : Guid (PK)       |
+                                            | OrderId : Guid (FK)  |
+                                            | Reason : string      |
+                                            | Status : ReturnStatus|
+                                            | CreatedAt : DateTime |
+                                            +----------------------+
+                                                       | 1
+                                                       |
+                                                       | N
+                                            +----------------------+
+                                            |      ReturnItem      |
+                                            |----------------------|
+                                            | Id : Guid (PK)       |
+                                            | ReturnRequestId (FK) |
+                                            | ProductName : string |
+                                            | Quantity : int       |
+                                            | UnitPrice : decimal  |
+                                            +----------------------+
+```
+
+### Статуси заявки (`ReturnStatus`)
+- `Pending` — заявка створена та очікує на розгляд.
+- `Approved` — заявка схвалена (остаточний статус).
+- `Rejected` — заявка відхилена (остаточний статус).
+
+### Persistence-моделі (EF Core SQLite)
+Для збереження інкапсуляції доменних сутностей (`ReturnRequest`, `ReturnItem`) використовуються окремі таблиці та моделі:
+- `ReturnRequestRow` (`Id`, `OrderId`, `Reason`, `Status`, `CreatedAt`, `List<ReturnItemRow> Items`)
+- `ReturnItemRow` (`Id`, `ReturnRequestRowId`, `ProductName`, `Quantity`, `UnitPrice`)
+
+## 5. Специфікація API-маршрутів (`/returns`)
+
+| HTTP Method | Маршрут | Призначення | Request DTO | Response DTO | Коди статусів |
+|---|---|---|---|---|---|
+| `GET` | `/returns` | Отримати список усіх заявок на повернення (опційний фільтр `?status=Pending`) | — | `IReadOnlyList<ReturnRequestResponse>` | `200 OK` |
+| `GET` | `/returns/{id:guid}` | Отримати одну заявку на повернення за ідентифікатором | — | `ReturnRequestResponse` | `200 OK`, `404 Not Found` |
+| `POST` | `/returns` | Створити нову заявку на повернення для оплаченого замовлення | `CreateReturnRequest(Guid OrderId, string Reason, IReadOnlyList<CreateReturnItemRequest> Items)` | `ReturnRequestResponse` | `201 Created`, `400 Bad Request`, `404 Not Found`, `409 Conflict` |
+| `POST` | `/returns/{id:guid}/approve` | Схвалити заявку на повернення (лише з `Pending` за наявності позицій) | — | `ReturnRequestResponse` | `200 OK`, `404 Not Found`, `409 Conflict` |
+| `POST` | `/returns/{id:guid}/reject` | Відхилити заявку на повернення (лише зі статусу `Pending`) | `RejectReturnRequest(string? Note)` (опційно) | `ReturnRequestResponse` | `200 OK`, `404 Not Found`, `409 Conflict` |
