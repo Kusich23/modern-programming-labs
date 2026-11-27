@@ -122,13 +122,13 @@ public class Order
     }
 
     /// <summary>
-    /// Cancels the order if it has not been paid or already cancelled.
+    /// Cancels the order if it has not been paid, shipped, delivered, or already cancelled.
     /// </summary>
     public void Cancel(Action<string>? logger = null)
     {
-        if (Status == OrderStatus.Paid)
+        if (Status is OrderStatus.Paid or OrderStatus.Shipped or OrderStatus.Delivered)
         {
-            throw new InvalidOperationException("Cannot cancel an order that has already been paid.");
+            throw new InvalidOperationException($"Cannot cancel an order in '{Status}' status.");
         }
 
         if (Status == OrderStatus.Cancelled)
@@ -136,13 +136,36 @@ public class Order
             throw new InvalidOperationException("Order is already cancelled.");
         }
 
-        if (Status != OrderStatus.Created)
-        {
-            throw new InvalidOperationException($"Cannot cancel an order in '{Status}' status.");
-        }
-
         Status = OrderStatus.Cancelled;
         logger?.Invoke($"Order {Id}: order cancelled.");
+    }
+
+    /// <summary>
+    /// Transitions a paid order to Shipped status.
+    /// </summary>
+    public void Ship(Action<string>? logger = null)
+    {
+        if (Status != OrderStatus.Paid)
+        {
+            throw new InvalidOperationException($"Cannot ship an order in '{Status}' status. Order must be Paid.");
+        }
+
+        Status = OrderStatus.Shipped;
+        logger?.Invoke($"Order {Id}: order shipped.");
+    }
+
+    /// <summary>
+    /// Transitions a shipped order to Delivered status.
+    /// </summary>
+    public void Deliver(Action<string>? logger = null)
+    {
+        if (Status != OrderStatus.Shipped)
+        {
+            throw new InvalidOperationException($"Cannot deliver an order in '{Status}' status. Order must be Shipped.");
+        }
+
+        Status = OrderStatus.Delivered;
+        logger?.Invoke($"Order {Id}: order delivered.");
     }
 
     /// <summary>
