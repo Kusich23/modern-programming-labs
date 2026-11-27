@@ -59,4 +59,71 @@ public class OrderTests
         // Assert
         Assert.Equal(OrderStatus.Paid, order.Status);
     }
+
+    [Fact]
+    public void Pay_WhenOrderIsAlreadyPaid_ThrowsInvalidOperationExceptionAndKeepsStatusPaid()
+    {
+        // Arrange
+        var order = new Order(CreateSampleCustomer());
+        order.AddItem(new Product("Keyboard", 3200m), 1);
+        IPaymentMethod paymentMethod = new CardPayment("4242");
+        order.Pay(paymentMethod);
+
+        // Act & Assert
+        Assert.Throws<InvalidOperationException>(() => order.Pay(paymentMethod));
+        Assert.Equal(OrderStatus.Paid, order.Status);
+    }
+
+    [Fact]
+    public void Pay_WhenOrderIsCancelled_ThrowsInvalidOperationExceptionAndKeepsStatusCancelled()
+    {
+        // Arrange
+        var order = new Order(CreateSampleCustomer());
+        order.AddItem(new Product("Keyboard", 3200m), 1);
+        order.Cancel();
+
+        // Act & Assert
+        Assert.Throws<InvalidOperationException>(() => order.Pay(new BankTransferPayment()));
+        Assert.Equal(OrderStatus.Cancelled, order.Status);
+    }
+
+    [Fact]
+    public void OrderPaid_WhenPaymentSucceeds_NotifiesBothSubscribers()
+    {
+        // Arrange
+        var order = new Order(CreateSampleCustomer());
+        order.AddItem(new Product("Laptop", 35000m), 1);
+
+        var notifications = new List<string>();
+        var auditLogs = new List<string>();
+        var notificationService = new NotificationService(msg => notifications.Add(msg));
+        var loggingService = new LoggingService(msg => auditLogs.Add(msg));
+
+        order.OrderPaid += notificationService.Handle;
+        order.OrderPaid += loggingService.Handle;
+
+        // Act
+        order.Pay(new CardPayment("4242"));
+
+        // Assert
+        Assert.Single(notifications);
+        Assert.Single(auditLogs);
+    }
+
+    [Fact]
+    public void OrderPaid_WhenPaymentFails_DoesNotInvokeSubscribers()
+    {
+        // Arrange
+        var order = new Order(CreateSampleCustomer());
+        order.AddItem(new Product("Mouse", 1200m), 1);
+        order.Cancel();
+
+        int eventCount = 0;
+        order.OrderPaid += (_, _) => eventCount++;
+
+        // Act & Assert
+        Assert.Throws<InvalidOperationException>(() => order.Pay(new CardPayment("4242")));
+        Assert.Equal(0, eventCount);
+        Assert.Equal(OrderStatus.Cancelled, order.Status);
+    }
 }
